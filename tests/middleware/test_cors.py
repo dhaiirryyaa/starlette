@@ -225,6 +225,66 @@ def test_cors_disallowed_preflight(
     assert response.text == "Disallowed CORS headers"
 
 
+def test_cors_preflight_allows_empty_header_elements(
+    test_client_factory: TestClientFactory,
+) -> None:
+    def homepage(request: Request) -> None:
+        pass  # pragma: no cover
+
+    app = Starlette(
+        routes=[Route("/", endpoint=homepage)],
+        middleware=[
+            Middleware(
+                CORSMiddleware,
+                allow_origins=["https://example.org"],
+                allow_headers=["X-Token", "Authorization"],
+            )
+        ],
+    )
+
+    client = test_client_factory(app)
+
+    # Test pre-flight with trailing comma
+    headers = {
+        "Origin": "https://example.org",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "X-Token, Authorization,",
+    }
+    response = client.options("/", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://example.org"
+
+    # Test pre-flight with intermediate empty elements and extra whitespace
+    headers = {
+        "Origin": "https://example.org",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "X-Token, , Authorization",
+    }
+    response = client.options("/", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://example.org"
+
+    # Test pre-flight with leading and trailing empty elements
+    headers = {
+        "Origin": "https://example.org",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": ", X-Token, Authorization, ",
+    }
+    response = client.options("/", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://example.org"
+
+    # Test pre-flight with an empty element and a disallowed header still fails
+    headers = {
+        "Origin": "https://example.org",
+        "Access-Control-Request-Method": "GET",
+        "Access-Control-Request-Headers": "X-Token, , X-Disallowed",
+    }
+    response = client.options("/", headers=headers)
+    assert response.status_code == 400
+    assert response.text == "Disallowed CORS headers"
+
+
 def test_preflight_allows_request_origin_if_origins_wildcard_and_credentials_allowed(
     test_client_factory: TestClientFactory,
 ) -> None:
